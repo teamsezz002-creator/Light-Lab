@@ -66,14 +66,20 @@ export const SimCanvas: React.FC<SimulationProps> = ({ state, setState }) => {
 
   // Ray Calculation
   const getRaysData = () => {
-    const { objPos, imgPos, objectHeight, imageHeight, isInfinite, isVirtual, isInverted } = physics;
-    const objTop = { x: objPos.x, y: objPos.y - objectHeight };
-    const imgTop = { x: imgPos.x, y: POLE_Y + (isInverted ? imageHeight : -imageHeight) };
+    const { objectHeight, imageHeight, isInfinite, isVirtual, isInverted } = physics;
+    const isRightSide = state.objectDistance < 0;
+    const sign = isRightSide ? -1 : 1;
+    
+    // Un-flip positions for pure left-side math
+    const absDistance = Math.abs(state.objectDistance === 0 ? 0.001 : state.objectDistance);
+    const objTop = { x: POLE_X - absDistance, y: POLE_Y - objectHeight };
+    const v_left = isRightSide ? (POLE_X - physics.imgPos.x) * sign : (physics.imgPos.x - POLE_X); 
+    const imgTop = { x: POLE_X + v_left, y: POLE_Y + (isInverted ? imageHeight : -imageHeight) };
 
     const focalX = state.mode === 'mirror' ? (state.mirrorType === 'convex' ? POLE_X + state.focalLength : POLE_X - state.focalLength) : 0;
     const rays: any[] = [];
     let exactImgTop = { ...imgTop };
-    let exactImgPos = { ...imgPos };
+    let exactImgPos = { x: imgTop.x, y: POLE_Y };
     let exactIsVirtual = isVirtual;
     let exactIsInfinite = isInfinite;
 
@@ -83,56 +89,46 @@ export const SimCanvas: React.FC<SimulationProps> = ({ state, setState }) => {
 
       if (state.mirrorType === 'plane') {
         const dyRel = POLE_Y - objTop.y;
-        
         exactImgTop.x = POLE_X + (POLE_X - objTop.x);
         exactImgTop.y = objTop.y;
         exactImgPos = { x: exactImgTop.x, y: POLE_Y };
         exactIsVirtual = true;
         exactIsInfinite = false;
 
-        // Ray 1: Parallel to axis
         const midPoint1 = { x: (objTop.x + POLE_X)/2, y: objTop.y };
         const reflectedMid1 = { x: POLE_X - 400, y: objTop.y };
         rays.push({
-          type: 'ray1',
-          color: '#3b82f6',
+          type: 'ray1', color: '#3b82f6',
           points: [{ x: objTop.x, y: objTop.y }, midPoint1, { x: POLE_X, y: objTop.y }],
           reflected: [{ x: POLE_X, y: objTop.y }, reflectedMid1, { x: -800, y: objTop.y }],
           virtual: [{ x: POLE_X, y: objTop.y }, exactImgTop]
         });
         
-        // Ray 2: Towards Pole
         const midPoint2 = { x: (objTop.x + POLE_X)/2, y: (objTop.y + POLE_Y)/2 };
         const m2_reflect = -dyRel / (POLE_X - objTop.x);
         const reflectedEnd2 = { x: POLE_X - 1000, y: POLE_Y + m2_reflect * (-1000 - POLE_X) };
         const reflectedMid2 = { x: (POLE_X + reflectedEnd2.x)/2, y: (POLE_Y + reflectedEnd2.y)/2 };
         rays.push({
-          type: 'ray2',
-          color: '#f59e0b',
+          type: 'ray2', color: '#f59e0b',
           points: [{ x: objTop.x, y: objTop.y }, midPoint2, { x: POLE_X, y: POLE_Y }],
           reflected: [{ x: POLE_X, y: POLE_Y }, reflectedMid2, reflectedEnd2],
           virtual: [{ x: POLE_X, y: POLE_Y }, exactImgTop]
         });
       } else {
-        // Curved Mirrors
         const getMid = (p1: any, p2: any) => ({ x: (p1.x + p2.x)/2, y: (p1.y + p2.y)/2 });
         const isConvex = state.mirrorType === 'convex';
         
-        // Ray 1 (Parallel) Geometry
         const dy1 = objTop.y - POLE_Y;
         const dx1 = Math.sqrt(Math.max(0, R * R - dy1 * dy1));
         const hitX1 = isConvex ? xC - dx1 : xC + dx1;
         const hitY1 = objTop.y;
         
-        // Ray 2 (Through C) Geometry
-        // Prevent Division by Zero if object is exactly at C
         const denom2 = Math.abs(xC - objTop.x) < 0.0001 ? 0.0001 : (xC - objTop.x);
         const slope2 = (POLE_Y - objTop.y) / denom2;
         const dx2 = R / Math.sqrt(1 + slope2 * slope2);
         const hitX2 = isConvex ? xC - dx2 : xC + dx2;
         const hitY2 = slope2 * (hitX2 - xC) + POLE_Y;
 
-        // Exact Intersection Algorithm (True Raytracing to avoid Paraxial disjoints)
         const denom1 = Math.abs(focalX - hitX1) < 0.0001 ? 0.0001 : (focalX - hitX1);
         const m1 = (POLE_Y - hitY1) / denom1;
         const m2 = slope2;
@@ -150,74 +146,65 @@ export const SimCanvas: React.FC<SimulationProps> = ({ state, setState }) => {
         exactImgPos = { x: exactImgTop.x, y: POLE_Y };
         exactIsVirtual = exactImgTop.x > POLE_X;
 
-        // Calculate Ray 1 Paths
         const angleFromHitToF = Math.atan2(POLE_Y - hitY1, focalX - hitX1);
         const reflectionAngle1 = isConvex ? angleFromHitToF + Math.PI : angleFromHitToF;
-        
-        const reflectedDest1 = { 
-          x: hitX1 + Math.cos(reflectionAngle1) * 2000, 
-          y: hitY1 + Math.sin(reflectionAngle1) * 2000 
-        };
-
+        const reflectedDest1 = { x: hitX1 + Math.cos(reflectionAngle1) * 2000, y: hitY1 + Math.sin(reflectionAngle1) * 2000 };
         const reflectedPath1 = isConvex 
           ? [ { x: hitX1, y: hitY1 }, getMid({x: hitX1, y: hitY1}, reflectedDest1), reflectedDest1 ]
           : [ { x: hitX1, y: hitY1 }, getMid({x: hitX1, y: hitY1}, exactImgTop), exactImgTop, reflectedDest1 ];
-          
         const virtualPath1 = exactIsVirtual ? [{ x: hitX1, y: hitY1 }, exactImgTop] : [];
 
         rays.push({
-          type: 'ray1',
-          color: '#3b82f6', // Vadadi (Blue)
+          type: 'ray1', color: '#3b82f6',
           points: [{ x: objTop.x, y: objTop.y }, getMid(objTop, {x: hitX1, y: hitY1}), { x: hitX1, y: hitY1 }],
-          reflected: reflectedPath1,
-          virtual: virtualPath1,
-          normal: [{x: xC, y: POLE_Y}, {x: hitX1, y: hitY1}]
+          reflected: reflectedPath1, virtual: virtualPath1, normal: [{x: xC, y: POLE_Y}, {x: hitX1, y: hitY1}]
         });
 
-        // Calculate Ray 2 Paths
         const angleBack2 = Math.atan2(objTop.y - hitY2, objTop.x - hitX2);
-        const reflectedDest2 = { 
-            x: hitX2 + Math.cos(angleBack2) * 2000, 
-            y: hitY2 + Math.sin(angleBack2) * 2000 
-        };
-
+        const reflectedDest2 = { x: hitX2 + Math.cos(angleBack2) * 2000, y: hitY2 + Math.sin(angleBack2) * 2000 };
         const reflectedPath2 = isConvex 
           ? [ { x: hitX2, y: hitY2 }, getMid({x: hitX2, y: hitY2}, reflectedDest2), reflectedDest2 ]
           : [ { x: hitX2, y: hitY2 }, getMid({x: hitX2, y: hitY2}, exactImgTop), exactImgTop, reflectedDest2 ];
 
         rays.push({
-          type: 'ray2',
-          color: '#f59e0b', // Amber/Yellow
+          type: 'ray2', color: '#f59e0b',
           points: [{ x: objTop.x, y: objTop.y }, getMid(objTop, {x: hitX2, y: hitY2}), { x: hitX2, y: hitY2 }],
-          reflected: reflectedPath2,
-          virtual: exactIsVirtual ? [{x: hitX2, y: hitY2}, exactImgTop] : [],
-          normal: [{x: xC, y: POLE_Y}, {x: hitX2, y: hitY2}]
+          reflected: reflectedPath2, virtual: exactIsVirtual ? [{x: hitX2, y: hitY2}, exactImgTop] : [], normal: [{x: xC, y: POLE_Y}, {x: hitX2, y: hitY2}]
         });
       }
     } else {
-      // Lens Rays - Simplified for clarity
       const getMid = (p1: any, p2: any) => ({ x: (p1.x + p2.x)/2, y: (p1.y + p2.y)/2 });
       const hitX = POLE_X;
       const hitY = objTop.y;
       
-      // Ray 1: Parallel
-      const reflectedDest1 = { x: imgTop.x + (imgTop.x - hitX)*2, y: imgTop.y + (imgTop.y - hitY)*2 };
+      const reflectedDest1 = { x: exactImgTop.x + (exactImgTop.x - hitX)*2, y: exactImgTop.y + (exactImgTop.y - hitY)*2 };
       rays.push({
-        type: 'ray1',
-        color: '#3b82f6',
+        type: 'ray1', color: '#3b82f6',
         points: [{ x: objTop.x, y: objTop.y }, getMid(objTop, {x: hitX, y: hitY}), { x: hitX, y: hitY }],
-        reflected: [{ x: hitX, y: hitY }, getMid({x: hitX, y: hitY}, imgTop), reflectedDest1],
-        virtual: isVirtual ? [{x: hitX, y: hitY}, {x: imgTop.x, y: imgTop.y}] : []
+        reflected: [{ x: hitX, y: hitY }, getMid({x: hitX, y: hitY}, exactImgTop), reflectedDest1],
+        virtual: exactIsVirtual ? [{x: hitX, y: hitY}, exactImgTop] : []
       });
 
-      // Ray 2: Through Center O
-      const reflectedDest2 = { x: imgTop.x + (imgTop.x - POLE_X)*2, y: imgTop.y + (imgTop.y - POLE_Y)*2 };
+      const reflectedDest2 = { x: exactImgTop.x + (exactImgTop.x - POLE_X)*2, y: exactImgTop.y + (exactImgTop.y - POLE_Y)*2 };
       rays.push({
-        type: 'ray2',
-        color: '#f59e0b',
+        type: 'ray2', color: '#f59e0b',
         points: [{ x: objTop.x, y: objTop.y }, getMid(objTop, {x: POLE_X, y: POLE_Y}), { x: POLE_X, y: POLE_Y }],
-        reflected: [{ x: POLE_X, y: POLE_Y }, getMid({x: POLE_X, y: POLE_Y}, imgTop), reflectedDest2],
-        virtual: isVirtual ? [{x: POLE_X, y: POLE_Y}, {x: imgTop.x, y: imgTop.y}] : []
+        reflected: [{ x: POLE_X, y: POLE_Y }, getMid({x: POLE_X, y: POLE_Y}, exactImgTop), reflectedDest2],
+        virtual: exactIsVirtual ? [{x: POLE_X, y: POLE_Y}, exactImgTop] : []
+      });
+    }
+
+    if (isRightSide) {
+      const flipX = (p: any) => ({ x: POLE_X - (p.x - POLE_X), y: p.y });
+      const traverse = (arr: any[]) => arr.map(flipX);
+
+      exactImgTop = flipX(exactImgTop);
+      exactImgPos = flipX(exactImgPos);
+      rays.forEach(r => {
+         r.points = traverse(r.points);
+         if (r.reflected) r.reflected = traverse(r.reflected);
+         if (r.virtual) r.virtual = traverse(r.virtual);
+         if (r.normal) r.normal = traverse(r.normal);
       });
     }
 
@@ -368,6 +355,52 @@ export const SimCanvas: React.FC<SimulationProps> = ({ state, setState }) => {
         </ul>
       </div>
 
+      {/* Nature of Image */}
+      {state.appMode !== 'game' && (
+        <div className="absolute bottom-6 right-6 z-40 bg-slate-800/90 backdrop-blur-md rounded-2xl border border-slate-700/50 p-4 shadow-2xl w-[260px] pointer-events-none">
+          <h3 className="text-white text-[10px] font-black uppercase tracking-widest mb-3 opacity-80 border-b border-slate-700 pb-2">Nature of Image</h3>
+          {exactIsInfinite ? (
+            <div className="text-slate-300 text-xs font-medium py-2">
+              Image forms at <span className="text-white font-bold">Infinity</span>. Highly magnified.
+            </div>
+          ) : (
+             <div className="space-y-2">
+               <div className="flex justify-between items-center text-xs">
+                 <span className="text-slate-400">Type:</span>
+                 <span className={`font-black tracking-wide ${exactIsVirtual ? 'text-indigo-400' : 'text-rose-400'}`}>
+                   {exactIsVirtual ? 'Virtual' : 'Real'}
+                 </span>
+               </div>
+               <div className="flex justify-between items-center text-xs">
+                 <span className="text-slate-400">Orientation:</span>
+                 <span className="font-black tracking-wide text-emerald-400">
+                   {exactImgTop.y <= POLE_Y ? 'Erect' : 'Inverted'}
+                 </span>
+               </div>
+               <div className="flex justify-between items-center text-xs">
+                 <span className="text-slate-400">Size:</span>
+                 <span className="font-black tracking-wide text-amber-400">
+                   {Math.abs(POLE_Y - exactImgTop.y) / physics.objectHeight > 1.001 ? 'Magnified' : Math.abs(POLE_Y - exactImgTop.y) / physics.objectHeight < 0.999 ? 'Diminished' : 'Same Size'}
+                 </span>
+               </div>
+               
+               <div className="pt-2 mt-2 border-t border-slate-700/50 flex gap-3 justify-between text-[10px] bg-slate-900/50 -mx-4 -mb-4 p-4 rounded-b-2xl">
+                 <div className="flex-1">
+                   <span className="text-slate-500 block mb-0.5">Image Dist (v)</span>
+                   <span className="text-slate-200 font-mono font-bold text-xs">{Math.abs(exactImgPos.x - POLE_X).toFixed(1)} cm</span>
+                 </div>
+                 <div className="flex-1 text-right">
+                   <span className="text-slate-500 block mb-0.5">Magnification</span>
+                   <span className="text-slate-200 font-mono font-bold text-xs">
+                     {((exactImgTop.y > POLE_Y ? -1 : 1) * Math.abs(POLE_Y - exactImgTop.y) / physics.objectHeight).toFixed(2)}x
+                   </span>
+                 </div>
+               </div>
+             </div>
+          )}
+        </div>
+      )}
+
       <GameHUD state={state} setState={setState} />
 
       <AnimatePresence>
@@ -479,6 +512,28 @@ export const SimCanvas: React.FC<SimulationProps> = ({ state, setState }) => {
         {/* Points markings */}
         {renderPoints()}
 
+        {/* Dimension Line for Object Distance (u) */}
+        {state.objectDistance !== 0 && (
+          <g className="dimension-u pointer-events-none opacity-80">
+            {/* Vertical guide lines */}
+            <line x1={physics.objPos.x} y1={60} x2={physics.objPos.x} y2={POLE_Y} stroke="#cbd5e1" strokeWidth="1" strokeDasharray="4 4" opacity="0.3" />
+            <line x1={POLE_X} y1={60} x2={POLE_X} y2={POLE_Y} stroke="#cbd5e1" strokeWidth="1" strokeDasharray="4 4" opacity="0.3" />
+            
+            {/* Edge Ticks */}
+            <line x1={physics.objPos.x} y1={50} x2={physics.objPos.x} y2={70} stroke="#94a3b8" strokeWidth="2" />
+            <line x1={POLE_X} y1={50} x2={POLE_X} y2={70} stroke="#94a3b8" strokeWidth="2" />
+            
+            {/* Connecting Horizontal Line */}
+            <line x1={physics.objPos.x} y1={60} x2={POLE_X} y2={60} stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="3 3"/>
+            
+            {/* Label Background & Text */}
+            <rect x={(physics.objPos.x + POLE_X) / 2 - 45} y={48} width="90" height="24" fill="#1e293b" rx="12" stroke="#475569" strokeWidth="1" />
+            <text x={(physics.objPos.x + POLE_X) / 2} y={64} textAnchor="middle" fill="#f8fafc" fontSize="12" fontWeight="bold" className="font-mono">
+              u = {Math.abs(state.objectDistance).toFixed(0)} cm
+            </text>
+          </g>
+        )}
+
         {/* Rays with Flow Animation */}
         {state.showRays && rays.map((ray, i) => (
           <g key={i}>
@@ -576,9 +631,19 @@ export const SimCanvas: React.FC<SimulationProps> = ({ state, setState }) => {
         {/* Zone Markers / Highlights */}
         {state.mirrorType === 'concave' && (
           <g opacity="0.1" pointerEvents="none">
-             <rect x="0" y={POLE_Y - 150} width={POLE_X - 2*state.focalLength} height="300" fill={physics.zone === "Beyond C" ? "#22c55e" : "transparent"} />
-             <rect x={POLE_X - 2*state.focalLength} y={POLE_Y - 150} width={state.focalLength} height="300" fill={physics.zone === "Between C and F" ? "#22c55e" : "transparent"} />
-             <rect x={POLE_X - state.focalLength} y={POLE_Y - 150} width={state.focalLength} height="300" fill={physics.zone === "Between F and P" ? "#22c55e" : "transparent"} />
+             {state.objectDistance >= 0 ? (
+               <>
+                 <rect x="0" y={POLE_Y - 150} width={POLE_X - 2*state.focalLength} height="300" fill={physics.zone === "Beyond C" ? "#22c55e" : "transparent"} />
+                 <rect x={POLE_X - 2*state.focalLength} y={POLE_Y - 150} width={state.focalLength} height="300" fill={physics.zone === "Between C and F" ? "#22c55e" : "transparent"} />
+                 <rect x={POLE_X - state.focalLength} y={POLE_Y - 150} width={state.focalLength} height="300" fill={physics.zone === "Between F and P" ? "#22c55e" : "transparent"} />
+               </>
+             ) : (
+               <>
+                 <rect x={POLE_X + 2*state.focalLength} y={POLE_Y - 150} width={CANVAS_WIDTH - (POLE_X + 2*state.focalLength)} height="300" fill={physics.zone === "Beyond C" ? "#22c55e" : "transparent"} />
+                 <rect x={POLE_X + state.focalLength} y={POLE_Y - 150} width={state.focalLength} height="300" fill={physics.zone === "Between C and F" ? "#22c55e" : "transparent"} />
+                 <rect x={POLE_X} y={POLE_Y - 150} width={state.focalLength} height="300" fill={physics.zone === "Between F and P" ? "#22c55e" : "transparent"} />
+               </>
+             )}
           </g>
         )}
       </svg>

@@ -47,6 +47,6 @@ export const PHYSICAL_CONSTANTS = {
   POLE_X: 550, 
   POLE_Y: 300,
   DEFAULT_FOCAL_LENGTH: 100,
-  MIN_OBJECT_DISTANCE: 10,
+  MIN_OBJECT_DISTANCE: -530,
   MAX_OBJECT_DISTANCE: 530, // Prevent object from going off left edge (550 - 530 = 20)
 };

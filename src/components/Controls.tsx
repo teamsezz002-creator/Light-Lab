@@ -142,16 +142,16 @@ export const ControlPanel: React.FC<ControlsProps> = ({ state, setState }) => {
         <div className="space-y-2">
           <input
             type="range"
-            min="20"
-            max="600"
+            min="-530"
+            max="530"
             value={state.objectDistance}
             onChange={(e) => setState(prev => ({ ...prev, objectDistance: Number(e.target.value) }))}
             className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
           />
           <div className="flex justify-between text-xs font-mono font-bold text-slate-500">
-            <span>20 cm</span>
-            <span className="text-indigo-600">{state.objectDistance.toFixed(0)} cm</span>
-            <span>600 cm</span>
+            <span>-530 cm</span>
+            <span className="text-indigo-600">{Math.abs(state.objectDistance).toFixed(0)} cm</span>
+            <span>530 cm</span>
           </div>
         </div>
       </div>
